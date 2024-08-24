@@ -1,3 +1,5 @@
 tweepy
 requests
+pyyaml
 python-dotenv
+tenacity
