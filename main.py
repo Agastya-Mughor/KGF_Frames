@@ -176,7 +176,7 @@ class ConfigManager:
                 return yaml.safe_load(config_file)
         else:
             return {
-                'tweetDelay': 30,
+                'tweetDelay': 1800,
                 'currentMovie': 1,
                 **{f'currentFrame_{i}': 1 for i in FRAME_DIRS.keys()},
             }
