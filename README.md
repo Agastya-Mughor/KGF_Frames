@@ -1,7 +1,3 @@
-Certainly! Here's a more detailed and comprehensive `README.md` for your Twitter Frame Bot project. This version is tailored to beginners or users with little to no knowledge of the project, providing them with a step-by-step guide to cloning and setting up their own version of the bot.
-
----
-
 # Twitter Frame Bot Setup Guide
 
 Welcome to the **Twitter Frame Bot** project! This guide will help you set up a Twitter bot that automatically tweets frames from a movie at regular intervals. You can easily customize this bot to use your own movie file and deploy it on Google Cloud Platform (GCP).
