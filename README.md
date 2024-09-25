@@ -245,7 +245,7 @@ Before you start, make sure you have the following:
    User=your_vm_user
    Working
 
-Directory=/home/your_vm_user/KGF_Frames
+   Directory=/home/your_vm_user/KGF_Frames
    ExecStart=/usr/bin/python3 /home/your_vm_user/KGF_Frames/main.py
    Restart=always
 
