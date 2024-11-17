@@ -6,7 +6,9 @@ import requests
 import yaml
 import signal
 import time
-from datetime import timedelta, datetime
+import pytz
+from tweepy.errors import TweepyException
+from datetime import timedelta, datetime, timezone
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from typing import Dict, Optional, Tuple
@@ -57,6 +59,9 @@ class CombinedRotatingFileHandler(RotatingFileHandler, TimedRotatingFileHandler)
         RotatingFileHandler.doRollover(self)
         TimedRotatingFileHandler.doRollover(self)
 
+# Set the Kolkata timezone (UTC+5:30)
+KOLKATA_TZ = pytz.timezone('Asia/Kolkata')
+
 # Set up logging
 def setup_logging():
     logger = logging.getLogger()
@@ -74,6 +79,7 @@ def setup_logging():
     )
     log_handler.setLevel(logging.INFO)
     log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    log_formatter.converter = lambda *args: datetime.now(KOLKATA_TZ).timetuple()
     log_handler.setFormatter(log_formatter)
 
     logger.addHandler(log_handler)
@@ -91,7 +97,7 @@ def validate_env_vars():
         "MAILGUN_API_KEY", "MAILGUN_DOMAIN", "RECIPIENT_EMAIL"
     ]
     missing_vars = [var for var in required_vars if not os.getenv(var)]
-    
+
     if missing_vars:
         error_msg = f"Missing environment variables: {', '.join(missing_vars)}"
         logger.error(error_msg)
@@ -146,7 +152,7 @@ class ConfigManager:
                 return yaml.safe_load(config_file)
         else:
             return {
-                'tweetDelay': 1800,
+                'tweetDelay': 5400,
                 'currentMovie': 1,
                 **{f'currentFrame_{i}': 1 for i in FRAME_DIRS.keys()},
             }
@@ -198,7 +204,7 @@ def tweet_frame(client: tweepy.Client, full_tweet: str, media: tweepy.Media) -> 
         client.create_tweet(text=full_tweet, media_ids=[media.media_id])
         logger.info("Tweet sent successfully.")
         return True
-    except tweepy.TweepError as e:
+    except tweepy.errors.TweepyException as e:
         logger.error(f"Twitter API error in tweet_frame: {e}")
         if e.api_code == 187:
             logger.warning("Duplicate tweet detected. Skipping this frame.")
@@ -212,7 +218,7 @@ def tweet_frame(client: tweepy.Client, full_tweet: str, media: tweepy.Media) -> 
                 client.create_tweet(text=full_tweet)
                 logger.info("Tweet sent successfully without media.")
                 return True
-            except tweepy.TweepError as e2:
+            except tweepy.errors.TweepyException as e2:
                 logger.error(f"Failed to send tweet without media: {e2}")
                 raise
         else:
@@ -228,9 +234,12 @@ def estimate_time_remaining(current_frame: int, total_frames: int, tweet_delay: 
     return str(time_remaining)
 
 def process_frames(api: tweepy.API, client: tweepy.Client):
-    tweet_interval = timedelta(seconds=config_manager.get('tweetDelay', 1800))
-    next_tweet_time = datetime.now().replace(second=0, microsecond=0)
-    next_tweet_time += timedelta(minutes=30 - (next_tweet_time.minute % 30))
+    tweet_interval = timedelta(minutes=90)
+    reference_time = datetime.now(KOLKATA_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    current_time = datetime.now(KOLKATA_TZ)
+    elapsed_time_since_ref = (current_time - reference_time).total_seconds()
+    next_interval = (elapsed_time_since_ref // tweet_interval.total_seconds() + 1) * tweet_interval.total_seconds()
+    next_tweet_time = reference_time + timedelta(seconds=next_interval)
 
     while True:
         current_movie = config_manager.get('currentMovie', 1)
@@ -262,8 +271,10 @@ def process_frames(api: tweepy.API, client: tweepy.Client):
 
                 if frame_full_path:
                     logger.info(f"Found frame file: {frame_full_path}")
+                    tweet_time_str = next_tweet_time.strftime('%Y-%m-%d %H:%M:%S')
+                    logger.info(f"Next tweet time: {tweet_time_str}")
 
-                    sleep_time = (next_tweet_time - datetime.now()).total_seconds()
+                    sleep_time = (next_tweet_time - datetime.now(KOLKATA_TZ)).total_seconds()
                     if sleep_time > 0:
                         time.sleep(sleep_time)
 
@@ -286,7 +297,7 @@ def process_frames(api: tweepy.API, client: tweepy.Client):
                     config_manager.set(f'currentFrame_{current_movie}', current_frame + 1)
                     config_manager.save_config()
 
-        except tweepy.TweepError as e:
+        except tweepy.errors.TweepyException as e:
             logger.error(f"Twitter API error: {e}")
             if e.api_code == 429:
                 logger.info("Rate limit exceeded. Waiting for 15 minutes.")
@@ -301,9 +312,10 @@ def process_frames(api: tweepy.API, client: tweepy.Client):
             send_email("Twitter Bot Error", f"An unexpected error occurred: {str(e)}")
             time.sleep(60)
 
-        if datetime.now() > next_tweet_time:
-            next_tweet_time = datetime.now().replace(second=0, microsecond=0)
-            next_tweet_time += timedelta(minutes=30 - (next_tweet_time.minute % 30))
+        if datetime.now(KOLKATA_TZ) > next_tweet_time:
+            elapsed_time_since_ref = (datetime.now(KOLKATA_TZ) - reference_time).total_seconds()
+            next_interval = (elapsed_time_since_ref // tweet_interval.total_seconds() + 1) * tweet_interval.total_seconds()
+            next_tweet_time = reference_time + timedelta(seconds=next_interval)
 
 def signal_handler(signum, frame):
     logger.info("Received shutdown signal. Cleaning up...")
